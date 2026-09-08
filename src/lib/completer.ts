@@ -1,6 +1,6 @@
 /**
- * Deterministic template-based task completer.
- * Optionally uses OpenAI when OPENAI_API_KEY is set.
+ * Task completer: OpenAI when OPENAI_API_KEY is set, else deterministic template.
+ * When the API key is set and OpenAI fails, errors propagate so the worker can mark FAILED.
  */
 
 export type CompleterInput = {
@@ -8,23 +8,28 @@ export type CompleterInput = {
   description: string;
   instructions: string;
   context?: string | null;
+  /** Extra text extracted from an uploaded attachment */
+  attachmentText?: string | null;
 };
 
 export async function completeTask(input: CompleterInput): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (key) {
-    try {
-      return await completeWithOpenAI(input, key);
-    } catch (err) {
-      console.warn("OpenAI completer failed, falling back to template:", err);
-    }
+    return completeWithOpenAI(input, key);
   }
   return completeWithTemplate(input);
 }
 
+function mergedContext(input: CompleterInput): string {
+  const parts: string[] = [];
+  if (input.context?.trim()) parts.push(input.context.trim());
+  if (input.attachmentText?.trim()) parts.push(input.attachmentText.trim());
+  return parts.join("\n\n") || "";
+}
+
 function completeWithTemplate(input: CompleterInput): string {
   const now = new Date().toISOString();
-  const ctx = (input.context || "").trim() || "_No additional context provided._";
+  const ctx = mergedContext(input) || "_No additional context provided._";
   const steps = input.instructions
     .split(/\n+/)
     .map((l) => l.trim())
@@ -71,15 +76,19 @@ Based on the instructions above, here is the structured output:
 }
 
 async function completeWithOpenAI(input: CompleterInput, apiKey: string): Promise<string> {
+  const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+  const ctx = mergedContext(input) || "(none)";
+
   const prompt = `You are WorkBal, an automated agent that completes ONLY client-submitted business tasks from their own instructions.
 Never suggest survey farming, CAPTCHA bypass, account theft, or ToS-violating scraping.
 
-Produce a clear markdown completion report for this task.
+Produce a clear, high-quality markdown completion report / deliverable for this task. Follow the instructions closely and incorporate any uploaded file text when relevant.
 
 Title: ${input.title}
 Description: ${input.description}
 Instructions: ${input.instructions}
-Context: ${input.context || "(none)"}`;
+Context / attachments:
+${ctx}`;
 
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -88,9 +97,13 @@ Context: ${input.context || "(none)"}`;
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model,
       messages: [
-        { role: "system", content: "You write professional markdown completion reports for client-submitted tasks." },
+        {
+          role: "system",
+          content:
+            "You write professional markdown completion reports and deliverables for client-submitted SMB / local-services business tasks. Be thorough, structured, and actionable.",
+        },
         { role: "user", content: prompt },
       ],
       temperature: 0.3,
@@ -99,7 +112,7 @@ Context: ${input.context || "(none)"}`;
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OpenAI error ${res.status}: ${text}`);
+    throw new Error(`OpenAI error ${res.status}: ${text.slice(0, 500)}`);
   }
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[];

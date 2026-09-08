@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { appBaseUrl, getStripe, stripeConfigured } from "@/lib/stripe";
 import { z } from "zod";
 
 const schema = z.object({
@@ -24,60 +25,46 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, alreadyPaid: true });
     }
 
-    const stripeKey = process.env.STRIPE_SECRET_KEY;
-    if (stripeKey) {
-      // Lightweight Checkout Session stub via Stripe API (no SDK required)
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      const params = new URLSearchParams();
-      params.append("mode", "payment");
-      params.append("success_url", `${appUrl}/dashboard/invoices?paid=1`);
-      params.append("cancel_url", `${appUrl}/dashboard/invoices?canceled=1`);
-      params.append("line_items[0][price_data][currency]", "usd");
-      params.append(
-        "line_items[0][price_data][product_data][name]",
-        `WorkBal: ${invoice.task.title}`
-      );
-      params.append(
-        "line_items[0][price_data][unit_amount]",
-        String(Math.round(invoice.amountUsd * 100))
-      );
-      params.append("line_items[0][quantity]", "1");
-      params.append("metadata[invoiceId]", invoice.id);
-
-      const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${stripeKey}`,
-          "Content-Type": "application/x-www-form-urlencoded",
+    if (stripeConfigured()) {
+      const stripe = getStripe();
+      const base = appBaseUrl();
+      const checkoutSession = await stripe.checkout.sessions.create({
+        mode: "payment",
+        success_url: `${base}/dashboard/invoices?paid=1&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${base}/dashboard/invoices?canceled=1`,
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: "usd",
+              unit_amount: Math.round(invoice.amountUsd * 100),
+              product_data: {
+                name: `WorkBal: ${invoice.task.title}`,
+                description: `Invoice for completed task`,
+              },
+            },
+          },
+        ],
+        metadata: {
+          invoiceId: invoice.id,
+          taskId: invoice.taskId,
+          userId: invoice.userId,
         },
-        body: params.toString(),
+        client_reference_id: invoice.id,
       });
 
-      if (!stripeRes.ok) {
-        const text = await stripeRes.text();
-        return NextResponse.json(
-          { error: `Stripe error: ${text}` },
-          { status: 502 }
-        );
-      }
-      const sessionData = (await stripeRes.json()) as { id: string; url: string };
       await prisma.invoice.update({
         where: { id: invoice.id },
-        data: { stripeSessionId: sessionData.id },
+        data: { stripeSessionId: checkoutSession.id },
       });
-      // For MVP demo: also mark PAID when session created if you prefer mock;
-      // here we return Checkout URL and leave status UNPAID until webhook (optional).
-      // To keep UX working without webhooks, mark paid after session create in stub mode:
-      if (process.env.STRIPE_AUTO_MARK_PAID === "true") {
-        await prisma.invoice.update({
-          where: { id: invoice.id },
-          data: { status: "PAID", paidAt: new Date() },
-        });
+
+      if (!checkoutSession.url) {
+        return NextResponse.json({ error: "Stripe session missing URL" }, { status: 502 });
       }
-      return NextResponse.json({ ok: true, url: sessionData.url });
+      return NextResponse.json({ ok: true, url: checkoutSession.url });
     }
 
-    // Mock pay
+    // Mock pay when Stripe keys are absent
     await prisma.invoice.update({
       where: { id: invoice.id },
       data: { status: "PAID", paidAt: new Date() },
@@ -87,6 +74,8 @@ export async function POST(req: Request) {
     if (err instanceof z.ZodError) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
-    return NextResponse.json({ error: "Payment failed" }, { status: 500 });
+    console.error("Pay error:", err);
+    const message = err instanceof Error ? err.message : "Payment failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

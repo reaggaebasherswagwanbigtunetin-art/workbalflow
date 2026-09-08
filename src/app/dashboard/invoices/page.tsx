@@ -1,9 +1,11 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PayButton } from "@/components/PayButton";
+import { StripeConfirm } from "@/components/StripeConfirm";
 import { formatDate, formatUsd } from "@/lib/format";
 
 export default async function InvoicesPage() {
@@ -27,6 +29,10 @@ export default async function InvoicesPage() {
             : "Mock pay is enabled (no Stripe key set)."}
         </p>
       </div>
+
+      <Suspense fallback={null}>
+        <StripeConfirm />
+      </Suspense>
 
       <div className="overflow-hidden rounded-2xl bg-white shadow-card ring-1 ring-ink-100">
         {invoices.length === 0 ? (

@@ -50,6 +50,22 @@ export default async function TaskDetailPage({
             <p className="mt-2 text-sm text-ink-800 whitespace-pre-wrap">{task.context}</p>
           </div>
         )}
+        {task.attachmentName && (
+          <div className="rounded-2xl bg-white p-5 shadow-card ring-1 ring-ink-100 sm:col-span-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-500">Attachment</h2>
+            <p className="mt-2 text-sm text-ink-800">
+              <a
+                href={`/api/tasks/${task.id}/attachment`}
+                className="font-medium text-brand-700 hover:underline"
+              >
+                {task.attachmentName}
+              </a>
+              {task.attachmentMime ? (
+                <span className="ml-2 text-xs text-ink-500">({task.attachmentMime})</span>
+              ) : null}
+            </p>
+          </div>
+        )}
       </div>
 
       {task.status === "FAILED" && task.error && (

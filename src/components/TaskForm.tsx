@@ -7,23 +7,18 @@ export function TaskForm() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const fd = new FormData(e.currentTarget);
-    const body = {
-      title: String(fd.get("title") || ""),
-      description: String(fd.get("description") || ""),
-      instructions: String(fd.get("instructions") || ""),
-      context: String(fd.get("context") || ""),
-      priceUsd: Number(fd.get("priceUsd") || 0),
-    };
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    // Ensure price is sent as a field (FormData already has it)
     const res = await fetch("/api/tasks", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: fd,
     });
     const data = await res.json().catch(() => ({}));
     setLoading(false);
@@ -36,7 +31,7 @@ export function TaskForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form onSubmit={onSubmit} className="space-y-5" encType="multipart/form-data">
       {error && (
         <div className="rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-rose-200">
           {error}
@@ -84,6 +79,25 @@ export function TaskForm() {
           className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-ink-900 shadow-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
           placeholder="Paste notes, excerpts, or constraints the agent should use."
         />
+      </div>
+      <div>
+        <label className="block text-sm font-medium text-ink-700 mb-1">
+          Attachment <span className="text-ink-400 font-normal">(optional, max 5MB)</span>
+        </label>
+        <input
+          name="attachment"
+          type="file"
+          accept=".pdf,.txt,.md,.csv,.jpg,.jpeg,.png,.gif,.webp,application/pdf,text/plain,text/markdown,text/csv,image/*"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            setFileName(f ? f.name : null);
+          }}
+          className="block w-full text-sm text-ink-600 file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100"
+        />
+        <p className="mt-1 text-xs text-ink-500">
+          PDF, txt, md, csv, or images. Text is passed to the completer; PDFs are text-extracted when possible.
+          {fileName ? ` Selected: ${fileName}` : ""}
+        </p>
       </div>
       <div>
         <label className="block text-sm font-medium text-ink-700 mb-1">Price (USD)</label>

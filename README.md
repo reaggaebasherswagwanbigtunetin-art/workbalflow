@@ -46,11 +46,25 @@ Copy `.env.example` to `.env` (a working `.env` is already included for local SQ
 |----------|----------|-------------|
 | `DATABASE_URL` | yes | SQLite path, e.g. `file:./dev.db` |
 | `AUTH_SECRET` | yes | Secret for signing session cookies |
-| `OPENAI_API_KEY` | no | If set, task completion uses OpenAI; otherwise a deterministic markdown template |
-| `STRIPE_SECRET_KEY` | no | If set, Pay opens a Stripe Checkout session; otherwise mock pay marks invoice PAID |
-| `STRIPE_AUTO_MARK_PAID` | no | If `true` with Stripe, mark invoice PAID when Checkout session is created (MVP stub) |
-| `NEXT_PUBLIC_APP_URL` | no | Base URL for Stripe success/cancel redirects (default `http://localhost:3000`) |
+| `NEXT_PUBLIC_APP_URL` | no | Base URL for Stripe redirects and email links (default `http://localhost:3000`) |
+| `OPENAI_API_KEY` | no | If set, task completion uses OpenAI chat completions; otherwise a deterministic markdown template |
+| `OPENAI_MODEL` | no | OpenAI model override (default `gpt-4o-mini`) |
+| `STRIPE_SECRET_KEY` | no | If set, Pay opens a real Stripe Checkout session; otherwise mock pay marks invoice PAID |
+| `STRIPE_WEBHOOK_SECRET` | no | Stripe webhook signing secret for `POST /api/stripe/webhook` |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | no | Publishable key (documented for Checkout / future Elements) |
+| `RESEND_API_KEY` | no | If set, completion and invoice emails go through Resend |
+| `EMAIL_FROM` | no | From address for Resend (default `WorkBal <onboarding@resend.dev>`) |
 | `WORKER_INTERVAL_MS` | no | Worker poll interval (default `3000`) |
+
+When Resend is not configured, emails are printed to the console and appended to `logs/emails.log`.
+
+### Stripe local webhook
+
+```bash
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+```
+
+Without a webhook, the invoices page still confirms payment via `GET /api/stripe/confirm?session_id=...` after the Checkout success redirect.
 
 ## Demo logins
 
@@ -74,12 +88,14 @@ Seeded data includes 1-2 completed sample tasks and invoices so the UI is not em
 
 ## Features
 
-1. **Landing** — product explanation + acceptable-use notice
+1. **Landing** — B2B / SMB hero, how it works, pricing tiers, acceptable-use notice
 2. **Auth** — email/password with HTTP-only session cookies
-3. **Client dashboard** — create tasks, list by status, view results
-4. **Agent worker** — QUEUED to RUNNING to COMPLETED (+ invoice) or FAILED
-5. **Invoices** — auto-created on completion; Pay (Stripe or mock)
-6. **Admin** — all-tasks queue, retry FAILED, process queue
+3. **Client dashboard** — create tasks (optional file upload), list by status, view results
+4. **Agent worker** — QUEUED to RUNNING to COMPLETED (+ invoice + emails) or FAILED
+5. **AI completer** — OpenAI when keyed; template fallback; attachment text in context
+6. **Invoices** — auto-created on completion; Pay via Stripe Checkout or mock
+7. **Email** — Resend or console/logs/emails.log on task complete and invoice created
+8. **Admin** — all-tasks queue, retry FAILED, process queue
 
 ## Project layout (main routes)
 
@@ -96,6 +112,11 @@ src/app/
   api/auth/*               Login / logout / register
   api/tasks                Create / list tasks
   api/worker               Process queue
-  api/invoices/pay         Pay invoice
+  api/invoices/pay         Pay invoice (Stripe or mock)
+  api/stripe/webhook       Stripe webhook -> mark PAID
+  api/stripe/confirm       Success-redirect session verify
+  api/tasks/[id]/attachment  Download attachment
   api/admin/retry          Retry failed task
+uploads/                   Task attachments (gitignored)
+logs/emails.log            Demo email sink (gitignored)
 ```
