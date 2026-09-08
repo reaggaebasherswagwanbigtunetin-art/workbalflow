@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-ink-50 text-ink-900 antialiased;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(12, 140, 231, 0.12), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(1, 88, 160, 0.06), transparent);
+  min-height: 100vh;
+}
+
+.prose-report {
+  @apply text-sm leading-relaxed text-ink-700 whitespace-pre-wrap font-mono bg-ink-950/95 text-ink-100 rounded-2xl p-5 overflow-x-auto;
+}
